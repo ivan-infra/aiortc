@@ -1005,6 +1005,14 @@ class RTCPeerConnection(AsyncIOEventEmitter):
         else:
             self.__pendingRemoteDescription = description
 
+    def getLocalCandidates(self) -> List[RTCIceCandidate]:
+        res = []
+        for transceiver in self.__transceivers:
+            dtlsTransport = transceiver._transport
+            iceTransport = dtlsTransport.transport
+            res.extend(iceTransport.iceGatherer.getLocalCandidates())
+        return res
+
     async def __connect(self) -> None:
         for transceiver in self.__transceivers:
             dtlsTransport = transceiver._transport
