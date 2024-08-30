@@ -810,6 +810,92 @@ class RTCPeerConnection(AsyncIOEventEmitter):
         else:
             self.__pendingLocalDescription = description
 
+    async def setLocalDescription1(
+        self, sessionDescription: RTCSessionDescription
+    ) -> None:
+        """
+        Change the local description associated with the connection.
+
+        :param sessionDescription: An :class:`RTCSessionDescription` generated
+                                    by :meth:`createOffer` or :meth:`createAnswer()`.
+        """
+        self.__log_debug(
+            "setLocalDescription(%s)\n%s",
+            sessionDescription.type,
+            sessionDescription.sdp,
+        )
+
+        # parse and validate description
+        description = sdp.SessionDescription.parse(sessionDescription.sdp)
+        description.type = sessionDescription.type
+        self.__validate_description(description, is_local=True)
+
+        # update signaling state
+        if description.type == "offer":
+            self.__setSignalingState("have-local-offer")
+        elif description.type == "answer":
+            self.__setSignalingState("stable")
+
+        # assign MID
+        for i, media in enumerate(description.media):
+            mid = media.rtp.muxId
+            self.__seenMids.add(mid)
+            if media.kind in ["audio", "video"]:
+                transceiver = self.__getTransceiverByMLineIndex(i)
+                transceiver._set_mid(mid)
+            elif media.kind == "application":
+                self.__sctp.mid = mid
+
+        # set ICE role
+        if description.type == "offer":
+            for iceTransport in self.__iceTransports:
+                if not iceTransport._role_set:
+                    iceTransport._connection.ice_controlling = True
+                    iceTransport._role_set = True
+
+        # set DTLS role
+        if description.type == "answer":
+            for i, media in enumerate(description.media):
+                if media.kind in ["audio", "video"]:
+                    transceiver = self.__getTransceiverByMLineIndex(i)
+                    transceiver._transport._set_role(media.dtls.role)
+                elif media.kind == "application":
+                    self.__sctp.transport._set_role(media.dtls.role)
+
+        # configure direction
+        for t in self.__transceivers:
+            if description.type in ["answer", "pranswer"]:
+                t._setCurrentDirection(and_direction(t.direction, t._offerDirection))
+
+        # gather candidates
+        await self.__gather()
+        # replace description
+        if description.type == "answer":
+            self.__currentLocalDescription = description
+            self.__pendingLocalDescription = None
+        else:
+            self.__pendingLocalDescription = description
+
+    async def setLocalDescription2(
+        self, sessionDescription: RTCSessionDescription
+    ) -> None:
+        for i, media in enumerate(description.media):
+            if media.kind in ["audio", "video"]:
+                transceiver = self.__getTransceiverByMLineIndex(i)
+                add_transport_description(media, transceiver._transport)
+            elif media.kind == "application":
+                add_transport_description(media, self.__sctp.transport)
+
+        # connect
+        asyncio.ensure_future(self.__connect())
+
+        # replace description
+        if description.type == "answer":
+            self.__currentLocalDescription = description
+            self.__pendingLocalDescription = None
+        else:
+            self.__pendingLocalDescription = description
+
     async def setRemoteDescription(
         self, sessionDescription: RTCSessionDescription
     ) -> None:
