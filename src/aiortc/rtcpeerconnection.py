@@ -879,6 +879,11 @@ class RTCPeerConnection(AsyncIOEventEmitter):
     async def setLocalDescription2(
         self, sessionDescription: RTCSessionDescription
     ) -> None:
+        # parse and validate description
+        description = sdp.SessionDescription.parse(sessionDescription.sdp)
+        description.type = sessionDescription.type
+        self.__validate_description(description, is_local=True)
+
         for i, media in enumerate(description.media):
             if media.kind in ["audio", "video"]:
                 transceiver = self.__getTransceiverByMLineIndex(i)
